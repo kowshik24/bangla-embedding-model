@@ -1,7 +1,8 @@
 # Model Configuration
 model: 
-  base_model: "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-  teacher_model: "sentence-transformers/all-mpnet-base-v2"  # For distillation
+  # Using public multilingual models that don't require authentication
+  base_model: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+  teacher_model: "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"  # For distillation
   max_seq_length: 256
   pooling_mode: "mean"
 
@@ -20,7 +21,7 @@ training:
 loss:
   primary:  "mnrl"  # MultipleNegativesRankingLoss
   use_matryoshka: true
-  matryoshka_dims: [768, 512, 256, 128, 64]
+  matryoshka_dims: [384, 256, 128, 64]  # MiniLM has 384 dimensions
   
 # Data Configuration
 data:
