@@ -206,22 +206,23 @@ class BanglaEmbeddingTrainer:
         # Load models
         self.load_models()
         
-        # Load datasets
+        # Load datasets and convert to HuggingFace format
         train_dataset = BanglaEmbeddingDataset(
             self.config.train_data_path,
             max_samples=None
-        )
+        ).to_hf_dataset()
         
-        eval_dataset = BanglaEmbeddingDataset(
+        eval_dataset_raw = BanglaEmbeddingDataset(
             self.config.eval_data_path,
             max_samples=5000
         )
+        eval_dataset = eval_dataset_raw.to_hf_dataset()
         
         # Create loss
         train_loss = self.create_loss_function()
         
-        # Create evaluator
-        evaluator = self.create_evaluator(eval_dataset)
+        # Create evaluator (uses raw dataset with .examples attribute)
+        evaluator = self.create_evaluator(eval_dataset_raw)
         
         # Training arguments
         training_args = SentenceTransformerTrainingArguments(

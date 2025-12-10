@@ -9,6 +9,7 @@ from dataclasses import dataclass
 import torch
 from torch.utils.data import Dataset, DataLoader
 from sentence_transformers import InputExample
+from datasets import Dataset as HFDataset
 from tqdm import tqdm
 
 
@@ -24,6 +25,7 @@ class BanglaEmbeddingDataset(Dataset):
     """
     PyTorch Dataset for Bangla embedding training.
     Supports multiple training formats:  pairs, triplets, and labeled pairs.
+    Compatible with SentenceTransformerTrainer.
     """
     
     def __init__(
@@ -34,6 +36,50 @@ class BanglaEmbeddingDataset(Dataset):
     ):
         self.examples = []
         self.load_data(data_path, max_samples, task_filter)
+        # Define column names for SentenceTransformerTrainer compatibility
+        self._column_names = self._determine_column_names()
+    
+    def _determine_column_names(self) -> List[str]:
+        """Determine column names based on data format."""
+        if not self.examples:
+            return ["sentence1", "sentence2"]
+        
+        first_example = self.examples[0]
+        num_texts = len(first_example.texts)
+        
+        if num_texts == 2:
+            if first_example.label is not None:
+                return ["sentence1", "sentence2", "label"]
+            return ["sentence1", "sentence2"]
+        elif num_texts == 3:
+            return ["anchor", "positive", "negative"]
+        else:
+            return [f"sentence{i+1}" for i in range(num_texts)]
+    
+    @property
+    def column_names(self) -> List[str]:
+        """Return column names for SentenceTransformerTrainer compatibility."""
+        return self._column_names
+    
+    def to_hf_dataset(self) -> HFDataset:
+        """Convert to HuggingFace Dataset for SentenceTransformerTrainer compatibility."""
+        data_dict = {col: [] for col in self._column_names}
+        
+        for example in self.examples:
+            if len(example.texts) == 2:
+                data_dict["sentence1"].append(example.texts[0])
+                data_dict["sentence2"].append(example.texts[1])
+                if "label" in self._column_names and example.label is not None:
+                    data_dict["label"].append(example.label)
+            elif len(example.texts) == 3:
+                data_dict["anchor"].append(example.texts[0])
+                data_dict["positive"].append(example.texts[1])
+                data_dict["negative"].append(example.texts[2])
+            else:
+                for i, text in enumerate(example.texts):
+                    data_dict[f"sentence{i+1}"].append(text)
+        
+        return HFDataset.from_dict(data_dict)
     
     def load_data(
         self,
