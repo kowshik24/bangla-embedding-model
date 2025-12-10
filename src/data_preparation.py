@@ -16,18 +16,26 @@ from bnunicodenormalizer import Normalizer
 bn_normalizer = Normalizer()
 
 
-def normalize_bangla_text(text: str) -> str:
-    """Normalize Bangla text using bnunicodenormalizer.
+def normalize_bangla_text(text: str, use_normalizer: bool = False) -> str:
+    """Normalize Bangla text.
     
-    Note: bnunicodenormalizer expects single words, so we process word-by-word.
+    Args:
+        text: Input text to normalize
+        use_normalizer: If True, use bnunicodenormalizer (slower but thorough).
+                       If False, just do basic whitespace normalization (fast).
     """
     if not text or not isinstance(text, str):
         return ""
     
-    # Remove extra whitespaces first
+    # Remove extra whitespaces
     text = re.sub(r'\s+', ' ', text).strip()
     
-    # Apply Bangla unicode normalization word-by-word
+    # Skip expensive word-by-word normalization for speed
+    # The BanglaParaphrase dataset is already clean
+    if not use_normalizer:
+        return text
+    
+    # Apply Bangla unicode normalization word-by-word (slow)
     normalized_words = []
     for word in text.split():
         try:
@@ -37,14 +45,19 @@ def normalize_bangla_text(text: str) -> str:
             else:
                 normalized_words.append(word)
         except Exception:
-            # If normalization fails for a word, keep original
             normalized_words.append(word)
     
     return ' '.join(normalized_words)
 
 
-def clean_text(text: str, lang: str = "bn") -> str:
-    """Clean and normalize text based on language."""
+def clean_text(text: str, lang: str = "bn", thorough: bool = False) -> str:
+    """Clean and normalize text based on language.
+    
+    Args:
+        text: Input text
+        lang: Language code ('bn' for Bangla)
+        thorough: If True, use thorough normalization (slower)
+    """
     if not text: 
         return ""
     
@@ -56,7 +69,7 @@ def clean_text(text: str, lang: str = "bn") -> str:
     
     # Language-specific cleaning
     if lang == "bn":
-        text = normalize_bangla_text(text)
+        text = normalize_bangla_text(text, use_normalizer=thorough)
     else:
         text = re.sub(r'\s+', ' ', text).strip()
     
@@ -86,8 +99,13 @@ def load_parallel_corpus(data_dir: str) -> List[Dict]:
     return parallel_data
 
 
-def load_paraphrase_data(data_dir: str) -> List[Dict]:
-    """Load Bangla paraphrase data from the downloaded BanglaParaphrase dataset."""
+def load_paraphrase_data(data_dir: str, max_samples: Optional[int] = None) -> List[Dict]:
+    """Load Bangla paraphrase data from the downloaded BanglaParaphrase dataset.
+    
+    Args:
+        data_dir: Data directory path
+        max_samples: Maximum number of samples to load (None for all)
+    """
     paraphrase_data = []
     
     try:
@@ -102,9 +120,20 @@ def load_paraphrase_data(data_dir: str) -> List[Dict]:
         print(f"Loading paraphrase data from {dataset_path}")
         dataset = load_from_disk(str(dataset_path))
         
+        samples_loaded = 0
         for split in ['train', 'validation', 'test']:
             if split in dataset:
-                for item in tqdm(dataset[split], desc=f"Processing paraphrase {split}"):
+                split_data = dataset[split]
+                # Limit samples if max_samples is set
+                if max_samples and samples_loaded >= max_samples:
+                    break
+                
+                remaining = max_samples - samples_loaded if max_samples else len(split_data)
+                items_to_process = min(len(split_data), remaining)
+                
+                # Fast batch processing - directly access data
+                for i in tqdm(range(items_to_process), desc=f"Processing paraphrase {split}"):
+                    item = split_data[i]
                     # BanglaParaphrase has 'source' and 'target' fields
                     sent1 = clean_text(item['source'], 'bn')
                     sent2 = clean_text(item['target'], 'bn')
@@ -117,6 +146,10 @@ def load_paraphrase_data(data_dir: str) -> List[Dict]:
                             "label": 1.0,  # All pairs are paraphrases
                             "task": "paraphrase"
                         })
+                        samples_loaded += 1
+                        
+                        if max_samples and samples_loaded >= max_samples:
+                            break
                         
     except Exception as e:
         print(f"Error loading paraphrase data: {e}")
@@ -263,17 +296,29 @@ def prepare_training_data(
     output_dir: str,
     include_parallel: bool = True,
     include_paraphrase: bool = True,
-    include_nli:  bool = True,
-    include_synthetic: bool = False
+    include_nli: bool = True,
+    include_synthetic: bool = False,
+    max_samples: Optional[int] = None
 ) -> Tuple[str, str]: 
     """
     Main function to prepare all training data.
     Returns paths to train and eval data files.
+    
+    Args:
+        output_dir: Directory to save processed data
+        include_parallel: Include parallel corpus data
+        include_paraphrase: Include paraphrase data
+        include_nli: Include NLI data
+        include_synthetic: Include synthetic data
+        max_samples: Maximum total samples (None for all). Use for quick testing.
     """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
     all_data = []
+    
+    if max_samples:
+        print(f"\n*** FAST MODE: Limiting to {max_samples} samples ***\n")
     
     # Load different data sources
     if include_parallel:
@@ -281,15 +326,16 @@ def prepare_training_data(
         all_data.extend([{
             "texts": [item["english"], item["bangla"]],
             "label": 1.0,
-            "task":  "parallel"
+            "task": "parallel"
         } for item in parallel_data])
     
-    if include_paraphrase: 
-        paraphrase_data = load_paraphrase_data(str(output_path))
+    if include_paraphrase:
+        # Pass max_samples to limit data loading
+        paraphrase_data = load_paraphrase_data(str(output_path), max_samples=max_samples)
         all_data.extend([{
             "texts": [item["sentence1"], item["sentence2"]],
             "label": item["label"],
-            "task":  "paraphrase"
+            "task": "paraphrase"
         } for item in paraphrase_data])
     
     if include_nli:

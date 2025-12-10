@@ -67,17 +67,34 @@ def main():
         default=None,
         help="Hugging Face Hub model ID (e.g., 'username/model-name')"
     )
+    parser.add_argument(
+        "--fast",
+        action="store_true",
+        help="Fast mode for testing: limit to 10k samples"
+    )
+    parser.add_argument(
+        "--max_samples",
+        type=int,
+        default=None,
+        help="Maximum number of samples to use (overrides --fast)"
+    )
     
     args = parser.parse_args()
+    
+    # Determine max samples
+    max_samples = args.max_samples
+    if args.fast and max_samples is None:
+        max_samples = 10000  # Default fast mode limit
     
     # Step 1: Prepare data if requested
     if args.prepare_data:
         logger.info("Preparing training data...")
         prepare_training_data(
             output_dir="./data/processed",
-            include_parallel=True,
+            include_parallel=False,  # Skip parallel (not available)
             include_paraphrase=True,
-            include_nli=True
+            include_nli=False,  # Skip NLI (not available)
+            max_samples=max_samples
         )
     
     # Step 2: Train model
