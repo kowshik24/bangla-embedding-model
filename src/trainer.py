@@ -136,13 +136,13 @@ class BanglaEmbeddingTrainer:
     def load_models(self):
         """Load base and teacher models."""
         logger.info(f"Loading base model: {self.config.base_model}")
-        # Don't pass token for public models - only use if HF_TOKEN is set and valid
-        token = HF_TOKEN if HF_TOKEN else None
-        self.model = SentenceTransformer(self.config.base_model, token=token)
+        # Use token=False to explicitly disable authentication for public models
+        # This avoids issues with expired cached tokens
+        self.model = SentenceTransformer(self.config.base_model, token=False)
         self.model.max_seq_length = self.config.max_seq_length
         
         logger.info(f"Loading teacher model: {self.config.teacher_model}")
-        self.teacher_model = SentenceTransformer(self.config.teacher_model, token=token)
+        self.teacher_model = SentenceTransformer(self.config.teacher_model, token=False)
         self.teacher_model.to(self.device)
     
     def create_loss_function(self) -> nn.Module:
