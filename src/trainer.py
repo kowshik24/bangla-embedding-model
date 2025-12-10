@@ -382,16 +382,23 @@ class BanglaEmbeddingTrainer:
     def train_multi_stage(self):
         """
         Multi-stage training pipeline: 
-        1. Cross-lingual distillation
+        1. Cross-lingual distillation (if parallel data available)
         2. Fine-tuning on Bangla task data
         3. Hard negative mining refinement
         """
         logger.info("Starting multi-stage training pipeline...")
         
-        # Stage 1: Cross-lingual distillation
-        logger.info("=== Stage 1: Cross-lingual Distillation ===")
-        self.config.num_epochs = 5
-        self.train_with_distillation()
+        # Stage 1: Cross-lingual distillation (only if parallel data exists)
+        parallel_data_path = Path(self.config.parallel_data_path)
+        if parallel_data_path.exists():
+            logger.info("=== Stage 1: Cross-lingual Distillation ===")
+            self.config.num_epochs = 5
+            self.train_with_distillation()
+        else:
+            logger.info("=== Stage 1: Skipping distillation (no parallel data) ===")
+            logger.info(f"Parallel data not found at {parallel_data_path}")
+            # Load models for subsequent stages
+            self.load_models()
         
         # Stage 2: Fine-tuning on Bangla data
         logger.info("=== Stage 2: Fine-tuning on Bangla Data ===")
@@ -399,9 +406,9 @@ class BanglaEmbeddingTrainer:
         self.config.learning_rate = 1e-5  # Lower LR for fine-tuning
         self.train_with_sentence_transformers()
         
-        # Stage 3: Hard negative mining refinement
-        logger.info("=== Stage 3: Hard Negative Mining ===")
-        self.train_with_hard_negatives()
+        # Stage 3: Hard negative mining refinement (optional, can be slow)
+        # logger.info("=== Stage 3: Hard Negative Mining ===")
+        # self.train_with_hard_negatives()
         
         return self.model
     
