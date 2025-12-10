@@ -72,8 +72,7 @@ def load_parallel_corpus(data_dir: str) -> List[Dict]:
                 source_type, 
                 name, 
                 lang1=src_lang, 
-                lang2=tgt_lang,
-                trust_remote_code=True
+                lang2=tgt_lang
             )
             
             for item in tqdm(dataset['train'], desc=f"Processing {name}"):
@@ -96,32 +95,41 @@ def load_parallel_corpus(data_dir: str) -> List[Dict]:
 
 
 def load_paraphrase_data(data_dir: str) -> List[Dict]:
-    """Load Bangla paraphrase identification data."""
+    """Load Bangla paraphrase data from the downloaded BanglaParaphrase dataset."""
     paraphrase_data = []
     
     try:
-        dataset = load_dataset(
-            "csebuetnlp/paraphrase_identification_bn",
-            trust_remote_code=True
-        )
+        # Load from the downloaded dataset on disk
+        from datasets import load_from_disk
         
-        for split in ['train', 'validation']: 
+        dataset_path = Path(data_dir).parent / "raw" / "paraphrase_bn"
+        if not dataset_path.exists():
+            # Try alternate path
+            dataset_path = Path("data/raw/paraphrase_bn")
+        
+        print(f"Loading paraphrase data from {dataset_path}")
+        dataset = load_from_disk(str(dataset_path))
+        
+        for split in ['train', 'validation', 'test']:
             if split in dataset:
                 for item in tqdm(dataset[split], desc=f"Processing paraphrase {split}"):
-                    sent1 = clean_text(item['sentence1'], 'bn')
-                    sent2 = clean_text(item['sentence2'], 'bn')
-                    label = item['label']
+                    # BanglaParaphrase has 'source' and 'target' fields
+                    sent1 = clean_text(item['source'], 'bn')
+                    sent2 = clean_text(item['target'], 'bn')
                     
+                    # All pairs in BanglaParaphrase are valid paraphrases (label=1.0)
                     if len(sent1) > 5 and len(sent2) > 5:
                         paraphrase_data.append({
                             "sentence1": sent1,
                             "sentence2": sent2,
-                            "label":  float(label),
+                            "label": 1.0,  # All pairs are paraphrases
                             "task": "paraphrase"
                         })
                         
-    except Exception as e: 
+    except Exception as e:
         print(f"Error loading paraphrase data: {e}")
+        import traceback
+        traceback.print_exc()
     
     print(f"Loaded {len(paraphrase_data)} paraphrase pairs")
     return paraphrase_data
@@ -133,7 +141,7 @@ def load_nli_data(data_dir:  str) -> List[Dict]:
     
     try:
         # Try loading XNLI Bengali subset
-        dataset = load_dataset("xnli", "bn", trust_remote_code=True)
+        dataset = load_dataset("xnli", "bn")
         
         label_map = {0: "entailment", 1: "neutral", 2: "contradiction"}
         
