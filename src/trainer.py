@@ -34,8 +34,12 @@ from .dataset import (
     create_dataloader
 )
 
+# Import the HF_TOKEN from the .env file
+HF_TOKEN = os.getenv("HF_TOKEN")
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 
 @dataclass
@@ -132,11 +136,11 @@ class BanglaEmbeddingTrainer:
     def load_models(self):
         """Load base and teacher models."""
         logger.info(f"Loading base model: {self.config.base_model}")
-        self.model = SentenceTransformer(self.config.base_model)
+        self.model = SentenceTransformer(self.config.base_model, token=HF_TOKEN)
         self.model.max_seq_length = self.config.max_seq_length
         
         logger.info(f"Loading teacher model: {self.config.teacher_model}")
-        self.teacher_model = SentenceTransformer(self.config.teacher_model)
+        self.teacher_model = SentenceTransformer(self.config.teacher_model, token=HF_TOKEN)
         self.teacher_model.to(self.device)
     
     def create_loss_function(self) -> nn.Module:
