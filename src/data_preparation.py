@@ -16,20 +16,31 @@ from bnunicodenormalizer import Normalizer
 bn_normalizer = Normalizer()
 
 
-def normalize_bangla_text(text:  str) -> str:
-    """Normalize Bangla text using bnunicodenormalizer."""
+def normalize_bangla_text(text: str) -> str:
+    """Normalize Bangla text using bnunicodenormalizer.
+    
+    Note: bnunicodenormalizer expects single words, so we process word-by-word.
+    """
     if not text or not isinstance(text, str):
         return ""
     
-    # Apply Bangla unicode normalization
-    normalized = bn_normalizer(text)
-    if normalized and normalized['normalized']:
-        text = normalized['normalized']
-    
-    # Remove extra whitespaces
+    # Remove extra whitespaces first
     text = re.sub(r'\s+', ' ', text).strip()
     
-    return text
+    # Apply Bangla unicode normalization word-by-word
+    normalized_words = []
+    for word in text.split():
+        try:
+            result = bn_normalizer(word)
+            if result and result.get('normalized'):
+                normalized_words.append(result['normalized'])
+            else:
+                normalized_words.append(word)
+        except Exception:
+            # If normalization fails for a word, keep original
+            normalized_words.append(word)
+    
+    return ' '.join(normalized_words)
 
 
 def clean_text(text: str, lang: str = "bn") -> str:
@@ -55,42 +66,23 @@ def clean_text(text: str, lang: str = "bn") -> str:
 def load_parallel_corpus(data_dir: str) -> List[Dict]:
     """
     Load English-Bangla parallel corpus for knowledge distillation.
+    Note: OPUS datasets may not be directly available. This function
+    will try to load from local files if available.
     """
     parallel_data = []
     data_path = Path(data_dir)
     
-    # Try loading from various sources
-    sources = [
-        ("opus", "CCAligned", "en", "bn"),
-        ("opus", "WikiMatrix", "en", "bn"),
-    ]
+    # First, try to load from local parallel data directory
+    local_parallel_file = data_path / "en_bn_parallel.json"
+    if local_parallel_file.exists():
+        print(f"Loading parallel data from {local_parallel_file}")
+        with open(local_parallel_file, 'r', encoding='utf-8') as f:
+            parallel_data = json.load(f)
+        print(f"Loaded {len(parallel_data)} parallel sentence pairs from local file")
+        return parallel_data
     
-    for source_type, name, src_lang, tgt_lang in sources:
-        try:
-            print(f"Loading {name} parallel corpus...")
-            dataset = load_dataset(
-                source_type, 
-                name, 
-                lang1=src_lang, 
-                lang2=tgt_lang
-            )
-            
-            for item in tqdm(dataset['train'], desc=f"Processing {name}"):
-                en_text = clean_text(item['translation']['en'], 'en')
-                bn_text = clean_text(item['translation']['bn'], 'bn')
-                
-                if len(en_text) > 10 and len(bn_text) > 10:
-                    parallel_data.append({
-                        "english": en_text,
-                        "bangla": bn_text,
-                        "source": name
-                    })
-                    
-        except Exception as e:
-            print(f"Could not load {name}:  {e}")
-            continue
-    
-    print(f"Loaded {len(parallel_data)} parallel sentence pairs")
+    print("No local parallel corpus found. Skipping parallel data loading.")
+    print("To use parallel data, place en_bn_parallel.json in data/parallel/")
     return parallel_data
 
 
@@ -135,13 +127,46 @@ def load_paraphrase_data(data_dir: str) -> List[Dict]:
     return paraphrase_data
 
 
-def load_nli_data(data_dir:  str) -> List[Dict]:
-    """Load NLI data for Bangla (from XNLI or similar)."""
+def load_nli_data(data_dir: str) -> List[Dict]:
+    """Load NLI data for Bangla (from local xnli_bn or XNLI)."""
     nli_data = []
     
+    # First try to load from local downloaded data
     try:
-        # Try loading XNLI Bengali subset
-        dataset = load_dataset("xnli", "bn")
+        from datasets import load_from_disk
+        
+        local_nli_path = Path("data/raw/xnli_bn")
+        if local_nli_path.exists():
+            print(f"Loading NLI data from {local_nli_path}")
+            dataset = load_from_disk(str(local_nli_path))
+            
+            label_map = {0: "entailment", 1: "neutral", 2: "contradiction"}
+            
+            for split in ['train', 'validation', 'test']:
+                if split in dataset:
+                    for item in tqdm(dataset[split], desc=f"Processing NLI {split}"):
+                        premise = clean_text(item.get('premise', item.get('sentence1', '')), 'bn')
+                        hypothesis = clean_text(item.get('hypothesis', item.get('sentence2', '')), 'bn')
+                        label_val = item.get('label', item.get('gold_label', 1))
+                        label = label_map.get(label_val, 'neutral') if isinstance(label_val, int) else label_val
+                        
+                        if len(premise) > 5 and len(hypothesis) > 5:
+                            nli_data.append({
+                                "premise": premise,
+                                "hypothesis": hypothesis,
+                                "label": label,
+                                "task": "nli"
+                            })
+            
+            print(f"Loaded {len(nli_data)} NLI pairs from local data")
+            return nli_data
+    except Exception as e:
+        print(f"Could not load local NLI data: {e}")
+    
+    # Fallback: try loading from Hugging Face
+    try:
+        print("Trying to load XNLI from Hugging Face...")
+        dataset = load_dataset("facebook/xnli", "bn")
         
         label_map = {0: "entailment", 1: "neutral", 2: "contradiction"}
         
@@ -161,7 +186,8 @@ def load_nli_data(data_dir:  str) -> List[Dict]:
                         })
                         
     except Exception as e:
-        print(f"Error loading NLI data: {e}")
+        print(f"NLI data not available: {e}")
+        print("Skipping NLI data. Training will proceed with paraphrase data only.")
     
     print(f"Loaded {len(nli_data)} NLI pairs")
     return nli_data

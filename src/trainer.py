@@ -114,6 +114,11 @@ class BanglaEmbeddingTrainer:
             if isinstance(section, dict):
                 flat_config.update(section)
         
+        # Filter to only known TrainingConfig fields
+        import dataclasses
+        valid_fields = {f.name for f in dataclasses.fields(TrainingConfig)}
+        flat_config = {k: v for k, v in flat_config.items() if k in valid_fields}
+        
         return TrainingConfig(**flat_config)
     
     def init_wandb(self):
